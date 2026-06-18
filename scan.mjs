@@ -397,6 +397,16 @@ export function buildCooldownFilter(windows, today) {
   };
 }
 
+export function buildPostAgeFilter(postAgeFilter) {
+  if (!postAgeFilter) return () => true;
+  const maxHours = Number(postAgeFilter.max_hours ?? 0);
+  if (!Number.isFinite(maxHours) || maxHours <= 0) return () => true;
+  const maxMs = maxHours * 60 * 60 * 1000;
+  return (postedAt) => {
+    if (postedAt == null) return true; // conservative: pass if no date available
+    return (Date.now() - postedAt) <= maxMs;
+  };
+}
 
 // ── URL rediscovery (--rediscover-404) ──────────────────────────────
 // When a tracked company's job URL returns 404/410, the role may have just
@@ -922,6 +932,7 @@ async function main() {
   const salaryFilter = buildSalaryFilter(config.salary_filter);
   const trustValidator = buildTrustValidator(config.trust_filter);
   const contentFilter = buildContentFilter(config.content_filter);
+  const postAgeFilter = buildPostAgeFilter(config.post_age_filter);
 
   // 3. Resolve a provider for each enabled company / board
   const targets = [];
@@ -999,6 +1010,7 @@ async function main() {
   let totalFilteredLocation = 0;
   let totalFilteredSalary = 0;
   let totalFilteredContent = 0;
+  let totalFilteredAge = 0;
   let totalDupes = 0;
   const newOffers = [];
   const errors = [...resolveErrors];
@@ -1053,6 +1065,10 @@ async function main() {
         }
         if (!contentFilter(job.description)) {
           totalFilteredContent++;
+          continue;
+        }
+        if (!postAgeFilter(job.postedAt)) {
+          totalFilteredAge++;
           continue;
         }
         if (seenUrls.has(job.url)) {
@@ -1180,6 +1196,7 @@ async function main() {
   if (Object.keys(windows).length > 0 || totalFilteredCooldown > 0) {
     console.log(`Filtered by cooldown:  ${totalFilteredCooldown} removed`);
   }
+  console.log(`Filtered by age:       ${totalFilteredAge} removed`);
   console.log(`Duplicates:            ${totalDupes} skipped`);
   if (historyPolicy.recheckAfterDays != null) {
     console.log(`Recheck eligible:      ${seenUrlState.recheckEligible} old scan-history URL(s)`);
